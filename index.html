@@ -1,303 +1,496 @@
-<div id="lhBibleApp" style="max-width:900px; margin:auto; font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height:1.4; color:#111;">
-  <h2 style="margin-bottom:.25rem;">Daily Bible Reading</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Living Hope Bible Reading Plan</title>
 
-  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; margin:.5rem 0 1rem;">
-    <label style="color:#111;">
-      Date:
-      <input id="lhDatePicker" type="date" style="padding:.25rem .4rem;" />
-    </label>
-
-    <span style="color:#111; font-size:.95em;">Quick links:</span>
-    <div id="lhWeekLinks" style="display:flex; gap:.4rem; flex-wrap:wrap;"></div>
-
-    <label style="margin-left:auto; display:flex; align-items:center; gap:.4rem; color:#111;">
-      <input id="lhReadingModeToggle" type="checkbox" />
-      <span style="font-weight:600;">Reading mode</span>
-    </label>
-  </div>
-
-  <h3 id="lhReadingRef" style="margin:.25rem 0; color:#111;"></h3>
-
-  <div id="lhReadingTextWrap" class="lh-reading-wrap" style="margin-top:.75rem;">
-    <div id="lhReadingText" class="lh-reading-text">Pick a date.</div>
-  </div>
-
-  <p style="font-size:.8em; color:#555; margin-top:2em;">
-    Scripture quotations are from the ESV&reg; Bible (The Holy Bible, English Standard Version&reg;),
-    copyright &copy; 2001 by Crossway, a publishing ministry of Good News Publishers.
-    Used by permission. All rights reserved.
-  </p>
-</div>
-
-<style>
-  #lhBibleApp .lh-reading-wrap {
-    color:#111;
-  }
-
-  #lhBibleApp .lh-reading-text {
-    white-space:pre-wrap;
-    text-align:left;
-    line-height:1.6;
-    font-size:1rem;
-  }
-
-  #lhBibleApp .lh-vnum {
-    font-size:.82em;
-    opacity:.65;
-    font-weight:500;
-  }
-
-  #lhBibleApp .lh-poetry {
-    margin:0;
-    padding-left:1.1em;
-    text-indent:-1.1em;
-  }
-
-  #lhBibleApp .lh-poetry .lh-line {
-    display:block;
-    padding-left:1.1em;
-    text-indent:-1.1em;
-  }
-
-  #lhBibleApp.lh-reading-mode .lh-reading-text {
-    font-size:1.15rem;
-    line-height:1.85;
-    max-width:42em;
-    margin:0 auto;
-  }
-
-  #lhBibleApp.lh-reading-mode .lh-reading-wrap {
-    background:#faf7f0;
-    border:1px solid #e6e0d6;
-    border-radius:.75rem;
-    padding:1rem;
-  }
-
-  @media (max-width:520px) {
-    #lhBibleApp.lh-reading-mode .lh-reading-text {
-      font-size:1.2rem;
-      line-height:1.9;
-    }
-  }
-</style>
-
-<script>
-(function () {
-  var CSV_URL = "https://raw.githubusercontent.com/pastorandrew-create/LivingHope_BibleReadingPlan_2026/main/Living_Hope_2026_Bible_Reading_App.csv";
-  var API_PROXY = "https://esv-proxy.onrender.com/passage";
-
-  var app = document.getElementById("lhBibleApp");
-  var picker = document.getElementById("lhDatePicker");
-  var toggle = document.getElementById("lhReadingModeToggle");
-  var refEl = document.getElementById("lhReadingRef");
-  var textEl = document.getElementById("lhReadingText");
-  var weekLinksEl = document.getElementById("lhWeekLinks");
-
-  function isoToday() {
-    var d = new Date();
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().slice(0, 10);
-  }
-
-  function addDaysISO(iso, n) {
-    var d = new Date(iso + "T00:00:00");
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  }
-
-  function getMondayISO(iso) {
-    var d = new Date(iso + "T00:00:00");
-    var day = d.getDay();
-    var diff = (day === 0 ? -6 : 1) - day;
-    d.setDate(d.getDate() + diff);
-    return d.toISOString().slice(0, 10);
-  }
-
-  function formatShort(iso) {
-    var d = new Date(iso + "T00:00:00");
-    return d.toLocaleDateString(undefined, { weekday: "short" });
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function loadCSV(url) {
-    return fetch(url, { cache: "no-store" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("Could not load reading plan.");
-        return res.text();
-      })
-      .then(function (text) {
-        var lines = text.trim().split(/\r?\n/);
-        var plan = {};
-        lines.slice(1).forEach(function (line) {
-          var parts = line.split(/,(.+)/);
-          var date = (parts[0] || "").trim();
-          var reading = (parts[1] || "").trim();
-          if (date && reading) plan[date] = reading;
-        });
-        return plan;
-      });
-  }
-
-  function wrapVerseNumbers(html) {
-    return html
-      .replace(/(^|<br>|\n)(\d{1,3})(\s)/g, '$1<span class="lh-vnum">$2</span>$3')
-      .replace(/(\s)(\d{1,3})(\s)/g, '$1<span class="lh-vnum">$2</span>$3');
-  }
-
-  function formatText(rawText) {
-    var lines = rawText.split("\n");
-    var candidates = lines.filter(function (l) {
-      return l.trim().length > 0;
-    });
-
-    var shortLines = candidates.filter(function (l) {
-      return l.trim().length <= 55;
-    }).length;
-
-    var spacedLines = candidates.filter(function (l) {
-      return /^\s{2,}/.test(l);
-    }).length;
-
-    var isPoetry =
-      candidates.length >= 4 &&
-      (spacedLines >= Math.max(2, candidates.length * .25) ||
-       shortLines >= candidates.length * .7);
-
-    var html;
-
-    if (isPoetry) {
-      html = '<div class="lh-poetry">' + lines.map(function (line) {
-        if (!line.trim()) return '<span class="lh-line"><br></span>';
-        return '<span class="lh-line">' + escapeHtml(line) + '</span>';
-      }).join("") + "</div>";
-    } else {
-      html = escapeHtml(rawText).replace(/\n/g, "<br>");
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #111111;
+      --muted: #555555;
+      --card: #faf7f0;
+      --border: #e6e0d6;
+      --button: #ffffff;
     }
 
-    return wrapVerseNumbers(html);
-  }
-
-  function setReadingMode(enabled) {
-    if (enabled) app.classList.add("lh-reading-mode");
-    else app.classList.remove("lh-reading-mode");
-
-    try {
-      localStorage.setItem("lh_reading_mode", enabled ? "1" : "0");
-    } catch (e) {}
-  }
-
-  function getReadingMode() {
-    try {
-      return localStorage.getItem("lh_reading_mode") === "1";
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function renderWeekLinks(plan, anchorISO, onPick) {
-    weekLinksEl.innerHTML = "";
-    var mondayISO = getMondayISO(anchorISO);
-
-    for (var i = 0; i < 6; i++) {
-      var dISO = addDaysISO(mondayISO, i);
-      var hasReading = !!plan[dISO];
-
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = formatShort(dISO);
-      btn.disabled = !hasReading;
-
-      btn.style.padding = ".28rem .55rem";
-      btn.style.border = "1px solid #111";
-      btn.style.borderRadius = ".45rem";
-      btn.style.background = hasReading ? "#fff" : "#eee";
-      btn.style.color = "#111";
-      btn.style.fontWeight = "600";
-      btn.style.cursor = hasReading ? "pointer" : "not-allowed";
-      btn.style.opacity = hasReading ? "1" : ".55";
-
-      btn.addEventListener("click", function (event) {
-        onPick(event.target.getAttribute("data-date"));
-      });
-
-      btn.setAttribute("data-date", dISO);
-      weekLinksEl.appendChild(btn);
-    }
-  }
-
-  function loadReading(plan, dateISO) {
-    var ref = plan[dateISO];
-    var today = isoToday();
-
-    if (!ref) {
-      refEl.textContent = dateISO === today
-        ? "Today — No reading scheduled"
-        : dateISO + " — No reading scheduled";
-      textEl.textContent = "";
-      return;
+    body.dark {
+      --bg: #111111;
+      --text: #f4f4f4;
+      --muted: #cccccc;
+      --card: #1d1d1d;
+      --border: #444444;
+      --button: #222222;
     }
 
-    refEl.textContent = dateISO === today
-      ? "Today — " + ref
-      : dateISO + " — " + ref;
+    body {
+      margin: 0;
+      padding: 1rem;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.4;
+    }
 
-    textEl.textContent = "Loading…";
+    .app {
+      max-width: 900px;
+      margin: auto;
+    }
 
-    fetch(API_PROXY + "?q=" + encodeURIComponent(ref), { cache: "no-store" })
-      .then(function (res) {
-        return res.json().then(function (data) {
-          return { ok: res.ok, data: data };
-        });
-      })
-      .then(function (result) {
-        if (!result.ok) {
-          textEl.textContent =
-            result.data.error ||
-            result.data.detail ||
-            "Unable to load passage.";
-          return;
-        }
+    .controls {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: .5rem 0 1rem;
+    }
 
-        textEl.innerHTML = formatText(result.data.text || "");
-      })
-      .catch(function () {
-        textEl.textContent =
-          "Error loading passage. Refresh once if the service is waking up.";
-      });
-  }
+    button, input[type="date"] {
+      padding: .35rem .6rem;
+      border: 1px solid var(--text);
+      border-radius: .45rem;
+      background: var(--button);
+      color: var(--text);
+      font-weight: 600;
+    }
 
-  loadCSV(CSV_URL)
-    .then(function (plan) {
-      function pickDate(iso) {
-        picker.value = iso;
-        renderWeekLinks(plan, iso, pickDate);
-        loadReading(plan, iso);
+    button {
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .week-links {
+      display: flex;
+      gap: .4rem;
+      flex-wrap: wrap;
+    }
+
+    .reading-wrap {
+      margin-top: .75rem;
+    }
+
+    .reading-text {
+      white-space: pre-wrap;
+      text-align: left;
+      line-height: 1.65;
+      font-size: 1rem;
+    }
+
+    .vnum {
+      font-size: .82em;
+      opacity: .65;
+      font-weight: 500;
+    }
+
+    .poetry {
+      margin: 0;
+      padding-left: 1.1em;
+      text-indent: -1.1em;
+    }
+
+    .poetry .line {
+      display: block;
+      padding-left: 1.1em;
+      text-indent: -1.1em;
+    }
+
+    body.reading-mode .reading-text {
+      font-size: 1.15rem;
+      line-height: 1.85;
+      max-width: 42em;
+      margin: 0 auto;
+    }
+
+    body.reading-mode .reading-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: .75rem;
+      padding: 1rem;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 10px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: .75rem 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--text);
+      opacity: .75;
+    }
+
+    .footer {
+      font-size: .8em;
+      color: var(--muted);
+      margin-top: 2em;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: .75rem;
       }
 
-      toggle.checked = getReadingMode();
-      setReadingMode(toggle.checked);
+      body.reading-mode .reading-text {
+        font-size: 1.2rem;
+        line-height: 1.9;
+      }
 
-      toggle.addEventListener("change", function () {
-        setReadingMode(toggle.checked);
+      .controls {
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <h2>Daily Bible Reading</h2>
+
+    <div class="controls">
+      <label>
+        Date:
+        <input id="datePicker" type="date" />
+      </label>
+
+      <button id="prevBtn" type="button">← Previous</button>
+      <button id="nextBtn" type="button">Next →</button>
+
+      <span>Quick links:</span>
+      <div id="weekLinks" class="week-links"></div>
+
+      <label>
+        <input id="readingModeToggle" type="checkbox" />
+        Reading mode
+      </label>
+
+      <label>
+        <input id="darkModeToggle" type="checkbox" />
+        Dark mode
+      </label>
+
+      <label>
+        <input id="readToggle" type="checkbox" />
+        Mark as read
+      </label>
+    </div>
+
+    <div class="progress-bar" aria-label="Weekly reading progress">
+      <div id="progressFill" class="progress-fill"></div>
+    </div>
+
+    <h3 id="readingRef"></h3>
+
+    <div id="readingTextWrap" class="reading-wrap">
+      <div id="readingText" class="reading-text">Pick a date.</div>
+    </div>
+
+    <p class="footer">
+      Scripture quotations are from the ESV&reg; Bible (The Holy Bible, English Standard Version&reg;),
+      copyright &copy; 2001 by Crossway, a publishing ministry of Good News Publishers.
+      Used by permission. All rights reserved.
+    </p>
+  </div>
+
+  <script>
+    const CSV_URL = "https://raw.githubusercontent.com/pastorandrew-create/LivingHope_BibleReadingPlan_2026/main/Living_Hope_2026_Bible_Reading_App.csv";
+    const API_PROXY = "https://esv-proxy.onrender.com/passage";
+
+    const CACHE_PREFIX = "lh_esv_cache_v1_";
+    const READ_PREFIX = "lh_read_";
+
+    const picker = document.getElementById("datePicker");
+    const readingRef = document.getElementById("readingRef");
+    const readingText = document.getElementById("readingText");
+    const weekLinks = document.getElementById("weekLinks");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const readingModeToggle = document.getElementById("readingModeToggle");
+    const darkModeToggle = document.getElementById("darkModeToggle");
+    const readToggle = document.getElementById("readToggle");
+    const progressFill = document.getElementById("progressFill");
+
+    let plan = {};
+    let currentDate = "";
+
+    function isoToday() {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      return d.toISOString().slice(0, 10);
+    }
+
+    function addDaysISO(iso, n) {
+      const d = new Date(iso + "T00:00:00");
+      d.setDate(d.getDate() + n);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function getMondayISO(iso) {
+      const d = new Date(iso + "T00:00:00");
+      const day = d.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      d.setDate(d.getDate() + diff);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function formatShort(iso) {
+      return new Date(iso + "T00:00:00").toLocaleDateString(undefined, {
+        weekday: "short"
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function loadCSV() {
+      const res = await fetch(CSV_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load CSV.");
+
+      const text = await res.text();
+      const lines = text.trim().split(/\r?\n/);
+
+      lines.slice(1).forEach(line => {
+        const [date, reading] = line.split(/,(.+)/);
+        if (date && reading) {
+          plan[date.trim()] = reading.trim();
+        }
+      });
+    }
+
+    function cacheKey(ref) {
+      return CACHE_PREFIX + ref;
+    }
+
+    function getCachedPassage(ref) {
+      try {
+        const cached = localStorage.getItem(cacheKey(ref));
+        if (!cached) return null;
+
+        const parsed = JSON.parse(cached);
+        return parsed.text || null;
+      } catch {
+        return null;
+      }
+    }
+
+    function setCachedPassage(ref, text) {
+      try {
+        localStorage.setItem(cacheKey(ref), JSON.stringify({
+          ref,
+          text,
+          savedAt: new Date().toISOString()
+        }));
+      } catch {}
+    }
+
+    async function fetchPassage(ref) {
+      const cached = getCachedPassage(ref);
+      if (cached) return cached;
+
+      const res = await fetch(`${API_PROXY}?q=${encodeURIComponent(ref)}`, {
+        cache: "no-store"
       });
 
-      picker.addEventListener("change", function () {
-        pickDate(picker.value);
-      });
+      const data = await res.json().catch(() => ({}));
 
-      pickDate(isoToday());
-    })
-    .catch(function () {
-      refEl.textContent = "Reading plan unavailable";
-      textEl.textContent = "The reading plan could not be loaded.";
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || "Unable to load passage.");
+      }
+
+      const text = data.text || "";
+      setCachedPassage(ref, text);
+      return text;
+    }
+
+    function wrapVerseNumbers(html) {
+      return html
+        .replace(/(^|<br>|\n)(\d{1,3})(\s)/g, '$1<span class="vnum">$2</span>$3')
+        .replace(/(\s)(\d{1,3})(\s)/g, '$1<span class="vnum">$2</span>$3');
+    }
+
+    function formatText(rawText) {
+      const lines = rawText.split("\n");
+      const candidates = lines.filter(l => l.trim().length > 0);
+
+      const shortLines = candidates.filter(l => l.trim().length <= 55).length;
+      const spacedLines = candidates.filter(l => /^\s{2,}/.test(l)).length;
+
+      const isPoetry =
+        candidates.length >= 4 &&
+        (spacedLines >= Math.max(2, candidates.length * .25) ||
+         shortLines >= candidates.length * .7);
+
+      let html;
+
+      if (isPoetry) {
+        html = `<div class="poetry">` + lines.map(line => {
+          if (!line.trim()) return `<span class="line"><br></span>`;
+          return `<span class="line">${escapeHtml(line)}</span>`;
+        }).join("") + `</div>`;
+      } else {
+        html = escapeHtml(rawText).replace(/\n/g, "<br>");
+      }
+
+      return wrapVerseNumbers(html);
+    }
+
+    function isRead(iso) {
+      try {
+        return localStorage.getItem(READ_PREFIX + iso) === "1";
+      } catch {
+        return false;
+      }
+    }
+
+    function setRead(iso, value) {
+      try {
+        localStorage.setItem(READ_PREFIX + iso, value ? "1" : "0");
+      } catch {}
+    }
+
+    function updateProgress(anchorISO) {
+      const monday = getMondayISO(anchorISO);
+      let total = 0;
+      let read = 0;
+
+      for (let i = 0; i < 6; i++) {
+        const iso = addDaysISO(monday, i);
+        if (plan[iso]) {
+          total++;
+          if (isRead(iso)) read++;
+        }
+      }
+
+      const percent = total ? Math.round((read / total) * 100) : 0;
+      progressFill.style.width = percent + "%";
+    }
+
+    function renderWeekLinks(anchorISO) {
+      weekLinks.innerHTML = "";
+      const monday = getMondayISO(anchorISO);
+
+      for (let i = 0; i < 6; i++) {
+        const iso = addDaysISO(monday, i);
+        const hasReading = !!plan[iso];
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = formatShort(iso) + (isRead(iso) ? " ✓" : "");
+        btn.disabled = !hasReading;
+
+        btn.addEventListener("click", () => pickDate(iso));
+        weekLinks.appendChild(btn);
+      }
+    }
+
+    async function loadReading(dateISO) {
+      currentDate = dateISO;
+      const ref = plan[dateISO];
+      const today = isoToday();
+
+      readToggle.checked = isRead(dateISO);
+
+      if (!ref) {
+        readingRef.textContent =
+          dateISO === today ? "Today — No reading scheduled" : `${dateISO} — No reading scheduled`;
+        readingText.textContent = "";
+        updateProgress(dateISO);
+        return;
+      }
+
+      readingRef.textContent =
+        dateISO === today ? `Today — ${ref}` : `${dateISO} — ${ref}`;
+
+      readingText.textContent = "Loading…";
+
+      try {
+        const text = await fetchPassage(ref);
+        readingText.innerHTML = formatText(text);
+      } catch (error) {
+        readingText.textContent =
+          "Unable to load the passage. If this is the first visit in a while, refresh once.";
+      }
+
+      updateProgress(dateISO);
+    }
+
+    function pickDate(iso) {
+      picker.value = iso;
+      renderWeekLinks(iso);
+      loadReading(iso);
+    }
+
+    function savePreference(key, value) {
+      try {
+        localStorage.setItem(key, value ? "1" : "0");
+      } catch {}
+    }
+
+    function getPreference(key) {
+      try {
+        return localStorage.getItem(key) === "1";
+      } catch {
+        return false;
+      }
+    }
+
+    readingModeToggle.addEventListener("change", () => {
+      document.body.classList.toggle("reading-mode", readingModeToggle.checked);
+      savePreference("lh_reading_mode", readingModeToggle.checked);
     });
-})();
-</script>
+
+    darkModeToggle.addEventListener("change", () => {
+      document.body.classList.toggle("dark", darkModeToggle.checked);
+      savePreference("lh_dark_mode", darkModeToggle.checked);
+    });
+
+    readToggle.addEventListener("change", () => {
+      setRead(currentDate, readToggle.checked);
+      renderWeekLinks(currentDate);
+      updateProgress(currentDate);
+    });
+
+    prevBtn.addEventListener("click", () => {
+      pickDate(addDaysISO(currentDate, -1));
+    });
+
+    nextBtn.addEventListener("click", () => {
+      pickDate(addDaysISO(currentDate, 1));
+    });
+
+    (async function init() {
+      try {
+        await loadCSV();
+
+        readingModeToggle.checked = getPreference("lh_reading_mode");
+        darkModeToggle.checked = getPreference("lh_dark_mode");
+
+        document.body.classList.toggle("reading-mode", readingModeToggle.checked);
+        document.body.classList.toggle("dark", darkModeToggle.checked);
+
+        picker.addEventListener("change", () => pickDate(picker.value));
+
+        pickDate(isoToday());
+      } catch {
+        readingRef.textContent = "Reading plan unavailable";
+        readingText.textContent = "The reading plan could not be loaded.";
+      }
+    })();
+  </script>
+</body>
+</html>
